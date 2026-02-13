@@ -15,6 +15,10 @@ MONIT_ALERT_EMAIL="seu_email@example.com"
 # Verifique as versões disponíveis na documentação do ISPConfig.
 PHP_VERSIONS="8.3,8.2,8.1"
 
+# FQDN (Fully Qualified Domain Name) para o servidor. Ex: painel.seudominio.com
+# Se deixado em branco, será gerado um FQDN temporário usando o IP do Droplet.
+SERVER_FQDN=""
+
 # --- Fim das Configurações Personalizáveis ---
 
 set -e
@@ -31,7 +35,33 @@ apt autoremove -y
 echo "Verificando e instalando dependências básicas (curl, wget, git)..."
 apt install -y curl wget git
 
-# 3. Executar o instalador automático do ISPConfig
+# 3. Configurar FQDN
+if [ -z "$SERVER_FQDN" ]; then
+  echo "Nenhum FQDN fornecido. Gerando um FQDN temporário..."
+  PUBLIC_IP=$(curl -s ifconfig.me)
+  SERVER_FQDN="ispconfig-$PUBLIC_IP.local"
+  echo "FQDN temporário gerado: $SERVER_FQDN"
+else
+  echo "Utilizando FQDN fornecido: $SERVER_FQDN"
+fi
+
+HOSTNAME=$(echo $SERVER_FQDN | cut -d. -f1)
+
+# Definir hostname
+hostnamectl set-hostname $SERVER_FQDN
+
+# Atualizar /etc/hosts
+# Remover entradas antigas para o hostname padrão da DigitalOcean
+sed -i '/^127.0.1.1/d' /etc/hosts
+
+# Adicionar a nova entrada FQDN
+if ! grep -q "127.0.1.1\s\+$SERVER_FQDN\s\+$HOSTNAME" /etc/hosts; then
+  echo "127.0.1.1 $SERVER_FQDN $HOSTNAME" >> /etc/hosts
+fi
+
+echo "FQDN configurado para $SERVER_FQDN"
+
+# 4. Executar o instalador automático do ISPConfig
 echo "Baixando e executando o instalador automático do ISPConfig..."
 wget -O - https://get.ispconfig.org | sh -s -- \
   --channel=stable \
@@ -46,4 +76,5 @@ wget -O - https://get.ispconfig.org | sh -s -- \
 
 echo "Instalação do ISPConfig concluída. Por favor, verifique os logs para quaisquer erros."
 echo "Lembre-se de substituir 'seu_email@example.com' pelo seu e-mail real no script antes de executar."
+echo "Se você usou um FQDN temporário, considere configurar um FQDN real e um registro DNS apontando para o IP do seu Droplet."
 echo "Você pode acessar o painel do ISPConfig através do IP do seu Droplet na porta 8080 (ex: https://your_droplet_ip:8080)"
